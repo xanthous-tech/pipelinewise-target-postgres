@@ -20,7 +20,7 @@ setup(name="pipelinewise-target-postgres",
       install_requires=[
           'pipelinewise-singer-python==1.*',
           'psycopg2-binary==2.8.5',
-          'inflection==0.3.1',
+          'inflection==0.5.1',
           'joblib==0.16.0'
       ],
       extras_require={
