@@ -210,10 +210,11 @@ def persist_lines(config, lines) -> None:
 
             key_properties[stream] = o['key_properties']
 
+            skip_on_conflict = config.get("skip_on_conflict", DEFAULT_MAX_PARALLELISM)
             if config.get('add_metadata_columns') or config.get('hard_delete'):
-                stream_to_sync[stream] = DbSync(config, add_metadata_columns_to_schema(o))
+                stream_to_sync[stream] = DbSync(config, skip_on_conflict, add_metadata_columns_to_schema(o))
             else:
-                stream_to_sync[stream] = DbSync(config, o)
+                stream_to_sync[stream] = DbSync(config, skip_on_conflict, o)
 
             stream_to_sync[stream].create_schema_if_not_exists()
             stream_to_sync[stream].sync_table()

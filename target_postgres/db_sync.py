@@ -183,9 +183,12 @@ def stream_name_to_dict(stream_name, separator='-'):
 
 # pylint: disable=too-many-public-methods,too-many-instance-attributes
 class DbSync:
-    def __init__(self, connection_config, stream_schema_message=None):
+    def __init__(self, connection_config, skip_on_conflict=False, stream_schema_message=None):
         """
             connection_config:      Postgres connection details
+
+            skip_on_conflict:       Skip row insert if primary key for the row exist. Also disables
+                                    partial updates.
 
             stream_schema_message:  An instance of the DbSync class is typically used to load
                                     data only from a certain singer tap stream.
@@ -204,6 +207,7 @@ class DbSync:
         """
         self.connection_config = connection_config
         self.stream_schema_message = stream_schema_message
+        self.skip_on_conflict = skip_on_conflict
 
         # logger to be used across the class's methods
         self.logger = get_logger('target_postgres')
@@ -374,9 +378,11 @@ class DbSync:
                 self.logger.debug(copy_sql)
                 with open(file, "rb") as f:
                     cur.copy_expert(copy_sql, f)
-                if len(self.stream_schema_message['key_properties']) > 0:
+
+                if len(self.stream_schema_message['key_properties']) > 0 and not self.skip_on_conflict:
                     cur.execute(self.update_from_temp_table(temp_table))
                     updates = cur.rowcount
+
                 cur.execute(self.insert_from_temp_table(temp_table))
                 inserts = cur.rowcount
 
@@ -386,25 +392,29 @@ class DbSync:
 
     # pylint: disable=duplicate-string-formatting-argument
     def insert_from_temp_table(self, temp_table):
+        conflict_query = 'ON CONFLICT DO NOTHING' if self.skip_on_conflict else ''
+
         stream_schema_message = self.stream_schema_message
         columns = self.column_names()
         table = self.table_name(stream_schema_message['stream'])
 
         if len(stream_schema_message['key_properties']) == 0:
             return """INSERT INTO {} ({})
-                    (SELECT s.* FROM {} s)
+                    (SELECT s.* FROM {} s) {}
                     """.format(table,
                                ', '.join(columns),
-                               temp_table)
+                               temp_table,
+                               conflict_query)
 
         return """INSERT INTO {} ({})
-        (SELECT s.* FROM {} s LEFT OUTER JOIN {} t ON {} WHERE {})
+        (SELECT s.* FROM {} s LEFT OUTER JOIN {} t ON {} WHERE {}) {}
         """.format(table,
                    ', '.join(columns),
                    temp_table,
                    table,
                    self.primary_key_condition('t'),
-                   self.primary_key_null_condition('t'))
+                   self.primary_key_null_condition('t'),
+                   conflict_query)
 
     def update_from_temp_table(self, temp_table):
         stream_schema_message = self.stream_schema_message
